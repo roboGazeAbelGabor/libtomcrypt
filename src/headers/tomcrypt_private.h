@@ -9,6 +9,8 @@
 
 #define LTC_PAD_MASK       (0xF000U)
 
+#define LTC_OID_MAX_STRLEN 256
+
 /* `NULL` as defined by the standard is not guaranteed to be of a pointer
  * type. In order to make sure that in vararg API's a pointer type is used,
  * define our own version and use that one internally.
@@ -22,6 +24,7 @@
  */
 
 enum ltc_oid_id {
+   LTC_OID_UNDEF,
    LTC_OID_RSA,
    LTC_OID_DSA,
    LTC_OID_EC,
