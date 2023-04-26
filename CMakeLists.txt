@@ -89,7 +89,7 @@ list(APPEND LTC_LD_FLAGS ${LTC_LDFLAGS})
 #-----------------------------------------------------------------------------
 # Library targets
 #-----------------------------------------------------------------------------
-add_library(${PROJECT_NAME}
+add_library(${PROJECT_NAME} STATIC
     ${SOURCES}
     ${PUBLIC_HEADERS}
     ${PRIVATE_HEADERS}
@@ -178,6 +178,8 @@ install(TARGETS ${PROJECT_NAME}
 
 # Install libtomcrypt.pc for pkg-config if we build a shared library
 if(BUILD_SHARED_LIBS)
+    message(STATUS "Building shared libs.")
+
     # Let the user override the default directory of the pkg-config file (usually this shouldn't be required to be changed)
     set(CMAKE_INSTALL_PKGCONFIGDIR "${CMAKE_INSTALL_LIBDIR}/pkgconfig" CACHE PATH "Folder where to install .pc files")
 
