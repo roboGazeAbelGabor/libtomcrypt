@@ -106,6 +106,7 @@ static void *run(void *arg)
 static void s_unregister_all(void)
 {
 #ifdef LTC_RIJNDAEL
+   /* `aesni_desc` is not registered, i.e. also shouldn't be unregistered */
 #ifdef ENCRYPT_ONLY
    /* alternative would be
     * unregister_cipher(&rijndael_enc_desc);
@@ -184,6 +185,7 @@ static void s_unregister_all(void)
 #endif
 
 #ifdef LTC_TIGER
+  unregister_hash(&tiger2_desc);
   unregister_hash(&tiger_desc);
 #endif
 #ifdef LTC_MD2

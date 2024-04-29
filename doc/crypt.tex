@@ -614,6 +614,10 @@ As of this release the current cipher\_descriptors elements are the following:
      \hline SAFER+ & saferp\_desc &16 & 16, 24, 32 & 8, 12, 16 & 4 \\
      \hline AES & aes\_desc & 16 & 16, 24, 32 & 10, 12, 14 & 6 \\
                 & aes\_enc\_desc & 16 & 16, 24, 32 & 10, 12, 14 & 6 \\
+                & rijndael\_desc & 16 & 16, 24, 32 & 10, 12, 14 & 6 \\
+                & rijndael\_enc\_desc & 16 & 16, 24, 32 & 10, 12, 14 & 6 \\
+     \hline AES & aesni\_desc & 16 & 16, 24, 32 & 10, 12, 14 & 6 \\
+            (only on x86 with SSE4.1) &&&&& \\
      \hline Twofish & twofish\_desc & 16 & 16, 24, 32 & 16 & 7 \\
      \hline DES & des\_desc & 8 & 8 & 16 & 13 \\
      \hline 3DES (EDE mode) & des3\_desc & 8 & 16, 24 & 16 & 14 \\
@@ -639,24 +643,30 @@ As of this release the current cipher\_descriptors elements are the following:
 \begin{small}
 \begin{enumerate}
 \item
-For AES, (also known as Rijndael) there are four descriptors which complicate issues a little.  The descriptors
-rijndael\_desc and rijndael\_enc\_desc provide the cipher named \textit{rijndael}.  The descriptors aes\_desc and
-aes\_enc\_desc provide the cipher name \textit{aes}.  Functionally both \textit{rijndael} and \textit{aes} are the same cipher.  The
+For AES, (also known as Rijndael) there are multiple descriptors which complicate issues a little.  As of FIXME-version-next
+the library also integrates hardware-accelerated AES operations (e.g. AES-NI on amd64 with SSE4.1).  Therefor the functionality of
+the descriptors for the AES algorithm has changed.  The rijndael\_desc and rijndael\_enc\_desc descriptors provide the cipher
+named \textit{rijndael} which contains the software implementation of the algorithm.  The descriptors aes\_desc and aes\_enc\_desc
+provide the cipher named \textit{aes} and implement an auto-detection mechanism that chooses between the software-only \textit{rijndael}
+and the hardware-accelerated implementation.
+
+Functionally both \textit{rijndael} and \textit{aes} are the same cipher.  The
 only difference is when you call find\_cipher() you have to pass the correct name.  The cipher descriptors with \textit{enc}
 in the middle (e.g. rijndael\_enc\_desc) are related to an implementation of Rijndael with only the encryption routine
 and tables.  The decryption and self--test function pointers of both \textit{encrypt only} descriptors are set to \textbf{NULL} and
 should not be called.
 
 The \textit{encrypt only} descriptors are useful for applications that only use the encryption function of the cipher.  Algorithms such
-as EAX, PMAC and OMAC only require the encryption function.  So far this \textit{encrypt only} functionality has only been implemented for
-Rijndael as it makes the most sense for this cipher.
+as EAX, PMAC and OMAC or the CTR mode only require the encryption function.  So far this \textit{encrypt only} functionality has only
+been implemented for Rijndael as it makes the most sense for this cipher.
 
 \item
 Note that for \textit{DES} and \textit{3DES} they use 8 and 24 byte keys but only 7 and 21 [respectively] bytes of the keys are in
 fact used for the purposes of encryption.  My suggestion is just to use random 8/24 byte keys instead of trying to make a 8/24
 byte string from the real 7/21 byte key.
 
-For \textit{3DES} exists a two-key mode, that can be initialized by calling the setup function with a \textit{keylen} of 16. This results in the re-usage of key \textit{K1} as key \textit{K3}. This mode has been specified as \textit{Keying Option 2} in FIPS 46-3.
+For \textit{3DES} exists a two-key mode, that can be initialized by calling the setup function with a \textit{keylen} of 16.
+This results in the re-usage of key \textit{K1} as key \textit{K3}. This mode has been specified as \textit{Keying Option 2} in FIPS 46-3.
 
 \item
 Note that \textit{Twofish} has additional configuration options (Figure \ref{fig:twofishopts}) that take place at build time.  These options are found in
@@ -2788,6 +2798,7 @@ The following hashes are provided as of this release within the LibTomCrypt libr
       \hline SHA-224 & sha224\_desc & 28 & 10 \\
       \hline BLAKE2S-224 & blake2s\_224\_desc & 28 & 23 \\
       \hline TIGER-192 & tiger\_desc & 24 & 1 \\
+      \hline TIGER2-192 & tiger2\_desc & 24 & 33 \\
       \hline SHA-1 & sha1\_desc & 20 & 2 \\
       \hline RIPEMD-160 & rmd160\_desc & 20 & 9 \\
       \hline BLAKE2S-160 & blake2s\_160\_desc & 20 & 22 \\
@@ -2866,6 +2877,7 @@ For further information see \url{https://en.wikipedia.org/wiki/SHA-3}
 
 Example of using SHAKE256 with an arbitrary length output.
 
+\begin{small}
 \begin{verbatim}
 #include <tomcrypt.h>
 int main(void)
@@ -2890,14 +2902,76 @@ int main(void)
    return EXIT_SUCCESS;
 }
 \end{verbatim}
+\end{small}
+
+\mysection{Extended Tiger API}
+
+The Tiger and Tiger2 hash algorithms \url{http://www.cs.technion.ac.il/~biham/Reports/Tiger/} specify the possibility to run the algorithm with
+a configurable number of passes.  The default and minimum is 3 passes, there is a second more or less widely used version with 4 passes,
+which has been introduced by PHP.  Its utilization is mostly limited to PHP, so we don't provide descriptors by default.
+
+An example of how to use the 4-pass version of Tiger in a libtomcrypt-style way is shown below.
+
+\index{tiger\_init\_ex()}
+\begin{small}
+\begin{verbatim}
+#include <tomcrypt.h>
+
+static const char *tiger_4passes_name = "tiger-4passes";
+
+static int tiger_4passes_init(hash_state *md)
+{
+   return tiger_init_ex(md, 4);
+}
+
+static struct ltc_hash_descriptor tiger_4passes_desc;
+
+int main(void)
+{
+   int err = 0;
+   unsigned char hash[MAXBLOCKSIZE], *p;
+   unsigned long hashlen = sizeof(hash);
+
+   memcpy(&tiger_4passes_desc, &tiger_desc, sizeof(tiger_4passes_desc));
+   tiger_4passes_desc.init = tiger_4passes_init;
+   /* Make sure to have a different name, ID and OID than standard Tiger */
+   tiger_4passes_desc.name = tiger_4passes_name;
+   tiger_4passes_desc.ID |= 0x80u;
+   memset(tiger_4passes_desc.OID, 0, sizeof(tiger_4passes_desc.OID));
+   tiger_4passes_desc.OIDlen = 0;
+
+   if ((err = register_hash(&tiger_4passes_desc)) == CRYPT_OK) {
+      err = hash_memory(find_hash(tiger_4passes_name), (unsigned char*)"abc", 3, hash, &hashlen);
+   }
+
+   if (err != 0) {
+      fprintf(stderr, "Error %s (%d)", error_to_string(err), err);
+   } else {
+      p = hash;
+      printf("Resulting hash: ");
+      while(hashlen--) {
+         printf("%02x", *p++);
+      }
+      printf("\n");
+   }
+   return err;
+}
+\end{verbatim}
+\end{small}
+
+When compiling and running this, the output should be:
+
+\begin{verbatim}
+Resulting hash: 538883c8fc5f28250299018e66bdf4fdb5ef7b65f2e91753
+\end{verbatim}
 
 \mysection{Notice}
 It is highly recommended that you \textbf{not} use the MD2, MD4, MD5, or SHA-1 hashes for the purposes of digital signatures or authentication codes.
 These hashes are provided for completeness and they still can be used for the purposes of password hashing or one-way accumulators
 (e.g. Yarrow).
 
-The other hashes such as the SHA-2 (that includes SHA-512, SHA-512/384, SHA-384, SHA-512/256, SHA-256 and SHA-224) and TIGER-192 are still considered secure
-for all purposes you would normally use a hash for.
+The other hashes such as the SHA-2 (that includes SHA-512, SHA-512/384, SHA-384, SHA-512/256, SHA-256 and SHA-224), TIGER-192 and TIGER2-192 are still
+considered secure for all purposes you would normally use a hash for.
 
 \chapter{Checksum Functions}
 
@@ -4180,7 +4254,8 @@ int pkcs_1_oaep_encode(
           unsigned long  modulus_bitlen,
              prng_state *prng,
                     int  prng_idx,
-                    int  hash_idx,
+                    int  mgf_hash,
+                    int  lparam_hash,
           unsigned char *out,
           unsigned long *outlen);
 \end{alltt}
@@ -4190,7 +4265,9 @@ tag that can be applied to the encoding.  This is useful to identify which syste
 \textit{lparam} can be set to \textbf{NULL}.
 
 OAEP encoding requires the length of the modulus in bits in order to calculate the size of the output.  This is passed as the parameter
-\textit{modulus\_bitlen}.  \textit{hash\_idx} is the index into the hash descriptor table of the hash desired.  PKCS \#1 allows any hash to be
+\textit{modulus\_bitlen}.  \textit{mgf\_hash} is the index into the hash descriptor table of the hash desired for the mask generation function (MGF).
+\textit{lparam\_hash} is the index into the hash descriptor table of the hash desired for the \textit{lparam}.  This value can also be set to $-1$
+to indicate usage of the same algorithm than for the MGF.  PKCS \#1 allows any hash to be
 used but both the encoder and decoder must use the same hash in order for this to succeed.  The size of hash output affects the maximum
  sized input message.  \textit{prng\_idx} and \textit{prng} are the random number generator arguments required to randomize the padding process.
 The padded message is stored in \textit{out} along with the length in \textit{outlen}.
@@ -4211,7 +4288,8 @@ int pkcs_1_oaep_decode(
     const unsigned char *lparam,
           unsigned long  lparamlen,
           unsigned long  modulus_bitlen,
-                    int  hash_idx,
+                    int  mgf_hash,
+                    int  lparam_hash,
           unsigned char *out,
           unsigned long *outlen,
                     int *res);
@@ -4220,8 +4298,8 @@ int pkcs_1_oaep_decode(
 This function decodes an OAEP encoded message and outputs the original message that was passed to the OAEP encoder.  \textit{msg} is the
 output of pkcs\_1\_oaep\_encode() of length \textit{msglen}.  \textit{lparam} is the same system variable passed to the OAEP encoder.  If it does not
 match what was used during encoding this function will not decode the packet.  \textit{modulus\_bitlen} is the size of the RSA modulus in bits
-and must match what was used during encoding.  Similarly the \textit{hash\_idx} index into the hash descriptor table must match what was used
-during encoding.
+and must match what was used during encoding.  Similarly the \textit{mgf\_hash} and \textit{lparam\_hash} indexes into the hash descriptor table must
+match what was used during encoding.
 
 If the function succeeds it decodes the OAEP encoded message into \textit{out} of length \textit{outlen} and stores a
 $1$ in \textit{res}.  If the packet is invalid it stores $0$ in \textit{res} and if the function fails for another reason
@@ -4416,7 +4494,8 @@ int rsa_encrypt_key_ex(
           unsigned long  lparamlen,
              prng_state *prng,
                     int  prng_idx,
-                    int  hash_idx,
+                    int  mgf_hash,
+                    int  lparam_hash,
                     int  padding,
                 rsa_key *key);
 \end{verbatim}
@@ -4437,7 +4516,8 @@ int rsa_decrypt_key(
           unsigned long *outlen,
     const unsigned char *lparam,
           unsigned long  lparamlen,
-                    int  hash_idx,
+                    int  mgf_hash,
+                    int  lparam_hash,
                     int *stat,
                 rsa_key *key);
 \end{verbatim}
@@ -5175,7 +5255,7 @@ typedef struct {
 } ltc_ecc_curve;
 \end{verbatim}
 
-The curve must be of the form $y^2 = x^3 - a \cdot x + b$, and all of the \textit{const char*} parameters have to be encoded in hexadecimal format.
+The curve must be of the form $y^2 = x^3 + a \cdot x + b$, and all of the \textit{const char*} parameters have to be encoded in hexadecimal format.
 
 Advanced example of creating an ECC key:
 \begin{small}
